@@ -1,10 +1,11 @@
+#ifndef HUFF_COMPRESS_H
+#define HUFF_COMPRESS_H
+
 #include <iostream> 
 #include <string>
 #include <memory>
 #include <array>
 
-#ifndef HUFF_COMPRESS 
-#define HUFF_COMPRESS 
 
 using namespace std;
 
@@ -35,7 +36,7 @@ private:
 		node() :freq(0), ch('\0'), left(nullptr), right(nullptr) {}
 	
 		int freq;
-		char ch;
+		unsigned char ch;
 
 		shared_ptr<node> left;
 		shared_ptr<node> right;
@@ -59,7 +60,8 @@ private:
 
 	shared_ptr<node> root;
 	unique_ptr<asciiNode[]> asciiArray;
-	const int asciiSize = 256;
+	const int asciiSize = 128;
+	int encodedFilePadding;
 
 	/*
 	Compressing methods
@@ -68,9 +70,11 @@ private:
 
 	void buildTree();
 
-	void encode(shared_ptr<node> nd, string huffCode);
-
 	bool writeEncoded2File(string inputFile, string outputFile);
+
+	bool isLeaf(shared_ptr<node> const& nd) const;
+
+	void encode(shared_ptr<node> const& nd, string huffCode);
 
 	/*
 	Decompressing methods

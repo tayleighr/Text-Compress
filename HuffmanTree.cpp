@@ -9,11 +9,12 @@
 
 using namespace std;
 
-HuffmanTree::HuffmanTree()
+HuffmanTree::HuffmanTree():encodedFilePadding{0}
 {
 	root.reset(new node);
 	//root = nullptr;
-	asciiArray.reset(new asciiNode[256]);
+	asciiArray.reset(new asciiNode[128]);
+	//messageCharCount = 0;
 }
 
 HuffmanTree::~HuffmanTree() {}
@@ -37,11 +38,17 @@ bool HuffmanTree::makeCompressedFile(string inputFile, string outputFile)
 {
 	if (!readFile(inputFile))
 		return false;
+
 	buildTree();
+
 	encode(root, "");
 
 	if (!writeEncoded2File(inputFile, outputFile))
+	{
+		cout << "couldn't write to encoded file" << endl;
 		return false;
+	}
+	
 
 	return true;
 }
@@ -49,31 +56,36 @@ bool HuffmanTree::makeCompressedFile(string inputFile, string outputFile)
 bool HuffmanTree::readFile(string filename)
 {
 	char read;
-	ifstream inFile(filename.c_str());
+	ifstream infile(filename.c_str());
+	
 
-
-	if (!inFile.is_open())
+	if (!infile.is_open())
 	{
-		cout << "ERROR opening file" << endl;
+		cout << "ERROR opening file!" << endl;
 		return false;
 	}
-
-	while (inFile >> noskipws >> read)
+	 
+	while (infile >> noskipws >> read)
+	{
 		asciiArray[read].freq++;
-
-	if (inFile.fail())
+	}
+	
+	/*
+	if (infile.fail())
 	{
 		cout << "ERROR reading file" << endl;
 		return false;
 	}
-	inFile.close();
+	*/
+	infile.close();
 
-	if (inFile.fail())
+	/*
+	if (infile.fail())
 	{
 		cout << "ERROR closing file" << endl;
 		return false;
 	}
-
+	*/
 	return true;
 }
 
@@ -83,8 +95,8 @@ void HuffmanTree::buildTree()
 	shared_ptr<node> tempNode;
 	shared_ptr<node> temp1;
 	shared_ptr<node> temp2;
-	shared_ptr<node> temp3
-		;
+	shared_ptr<node> temp3;
+
 	for (int i = 0; i < asciiSize; i++)
 	{
 		if (asciiArray[i].freq > 0)
@@ -100,30 +112,38 @@ void HuffmanTree::buildTree()
 	{
 		temp1=pq.top();
 		pq.pop();
-		temp2=pq.top();
 
-		temp3 = make_shared<node>();
 
-		if (temp2 != nullptr)
+		if (!pq.empty())
 		{
+			temp3 = make_shared<node>();
+			temp2=pq.top();
 			pq.pop();
 			temp3->left = temp1;
 			temp3->right = temp2;
 			temp3->freq = temp1->freq + temp2->freq;
-			pq.push(tempNode);
+			pq.push(temp3);
 		}
 		else
 		{
-			temp3 = temp1;
+			root = temp1;
 		}
-		root = temp3;
 	}
+	
 }
 
-void HuffmanTree::encode(shared_ptr<node> nd, string huffCode)
+bool HuffmanTree::isLeaf(shared_ptr<node> const& nd) const
 {
-	if (nd->ch != '/0')
+	if (nd->left == nullptr && nd->right == nullptr)
+		return true;
+	return false;
+}
+
+void HuffmanTree::encode(shared_ptr<node> const& nd, string huffCode)
+{
+	if (isLeaf(nd))
 	{
+		cout << nd->ch << " with huffcode: " << huffCode << endl;
 		asciiArray[nd->ch].encoding = huffCode;
 		return;
 	}
@@ -156,11 +176,13 @@ bool HuffmanTree::writeEncoded2File(string inputFile, string outputFile)
 	}
 
 	infile.close();
+	/*
 	if (infile.fail())
 	{
 		cout << "ERROR closing input file!" << endl;
 		return false;
 	}
+	*/
 
 	ofstream outfile(outputFile.c_str(), ios::binary);
 
@@ -170,21 +192,32 @@ bool HuffmanTree::writeEncoded2File(string inputFile, string outputFile)
 		return false;
 	}
 
-	while ((int)stream.length() > WRITE_SIZE)
+	while((int)stream.length() % 8 > 0) //generate arbitrary bits to create even byte count
+	{
+		stream += '0';
+		encodedFilePadding++;
+	}
+
+	cout << encodedFilePadding << "   file padding is" << endl;
+	while ((int)stream.length() > 0)
 	{
 		string byte = stream.substr(0, WRITE_SIZE);
-		bitset<8> segment(byte);
+
+		bitset<WRITE_SIZE> segment(byte);
 		const char toWrite = (unsigned char)((unsigned int)segment.to_ulong());
 		outfile.write(&toWrite, sizeof(char));
 		stream = stream.substr(WRITE_SIZE, stream.length() - WRITE_SIZE);
+		cout << "One byte at a time: " << byte << endl;
 	}
 
 	outfile.close();
+	/*
 	if (outfile.fail())
 	{
 		cout << "ERROR closing output file!" << endl;
 		return false;
 	}
+	*/
 
 	return true;
 }
@@ -215,24 +248,22 @@ bool HuffmanTree::readEncodedFile(string filename, string& bitStream)
 		return false;
 	}
 
-	encodedfile >> std::noskipws;
-
-	while (!encodedfile.eof())
+	unsigned char readMe;
+	while (encodedfile >> noskipws >> readMe)
 	{
-		unsigned char readMe;
-		encodedfile >> readMe;
 		bitset<8> set((unsigned long)readMe);
 		bitStream += set.to_string();
 	}
 
-
 	encodedfile.close();
 
+	/*
 	if (encodedfile.fail())
 	{
 		cout << "ERRORS reading from encoded file!" << endl;
 		return false;
 	}
+	*/
 
 	return true;
 }
@@ -240,6 +271,7 @@ bool HuffmanTree::readEncodedFile(string filename, string& bitStream)
 bool HuffmanTree::writeDecoded2File(string bits, string outputFile)
 {
 	ofstream oFile(outputFile.c_str());
+	int printedChars = 0;
 
 	if (!oFile.is_open())
 	{
@@ -247,33 +279,45 @@ bool HuffmanTree::writeDecoded2File(string bits, string outputFile)
 		return false;
 	}
 
-	shared_ptr<node> walk;
-
-	for (int i = 0; i < (int)bits.length(); i++)
+	shared_ptr<node> walk = root;
+	cout << encodedFilePadding << "encoded file padding" << endl;
+	for (int i = 0; i < (int)bits.length()-encodedFilePadding; i++)
 	{
-		if (bits[i] == 0)
-			walk = walk->left;
-		else
-			walk = walk->right;
-
-		if (walk->ch != '\0')
+		if (bits[i] == '0')
 		{
+			cout << '0';
+			walk = walk->left;
+		}
+		else
+		{
+			cout << '1';
+			walk = walk->right;
+		}
+
+		if (isLeaf(walk))
+		{	
+			++printedChars;
 			oFile << walk->ch;
+			cout << "   " << walk->ch << endl;
 			walk = root;
+
 		}
 	}
 
+	/*
 	if (oFile.fail())
 	{
 		cout << "ERROR printing to output file!" << endl;
 		return false;
 	}
+	*/
 
 	oFile.close();
-
+	/*
 	if (oFile.fail())
 	{
 		cout << "ERROR closing output file!" << endl;
 	}
+	*/
 	return true;
 }

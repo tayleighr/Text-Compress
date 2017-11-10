@@ -1,3 +1,24 @@
+/*
+Filename: HuffmanTree.h
+Author: Taylor Roozen
+
+Purpose: This implementation takes a text document, scans the document to determine character frequency, builds a
+huffman tree based on those frequencies, and then encodes each character in the text via the search path taken to
+find each character (leaf) as the document is re-scanned. Moving to a left child in the tree adds a 0 to the character 
+code, searching right adds a 1. 
+
+Once the entire document is represented as a binary encoded string, the string is separated into bytes, and printed into
+an enoded text file (strings of characters not divisible by 8 are padded with zeros).
+
+In order to decompress, the reciever needs the original huffman tree structure, and the amount of zero padding added to
+the document. It then recovers the binary representation of the encoded characters, re-constructs the bit string, and 
+traverses the tree according to the binary pattern (0->left, 1->right); every time a leaf is encountered in the tree, 
+the character represented at that leaf is printed to the final, recovered text. The last n padded digits are ignored.
+
+The next step in this implementation would be to combine it with a TCP/IP protocol to actually send the compressed
+document.
+*/
+
 #ifndef HUFF_COMPRESS_H
 #define HUFF_COMPRESS_H
 
@@ -72,6 +93,8 @@ private:
 
 	bool writeEncoded2File(string inputFile, string outputFile);
 
+	void printToEncoded(string& bitStream, ostream& outfile);
+
 	bool isLeaf(shared_ptr<node> const& nd) const;
 
 	void encode(shared_ptr<node> const& nd, string huffCode);
@@ -80,9 +103,8 @@ private:
 	Decompressing methods
 	*/
 
-	bool readEncodedFile(string filename, string& bitStream);
-
-	bool writeDecoded2File(string bits, string outputFile);
+	bool decodeToFile(string eFile, string outputFile);
+	void walkTree(shared_ptr<node>& walk, string bits, ostream& outputFile);
 };
 
 #endif

@@ -1,3 +1,24 @@
+/*
+Filename: HuffmanTree.h
+Author: Taylor Roozen
+
+Purpose: This implementation takes a text document, scans the document to determine character frequency, builds a
+huffman tree based on those frequencies, and then encodes each character in the text via the search path taken to
+find each character (leaf) as the document is re-scanned. Moving to a left child in the tree adds a 0 to the character
+code, searching right adds a 1.
+
+Once the entire document is represented as a binary encoded string, the string is separated into bytes, and printed into
+an enoded text file (strings of characters not divisible by 8 are padded with zeros).
+
+In order to decompress, the reciever needs the original huffman tree structure, and the amount of zero padding added to
+the document. It then recovers the binary representation of the encoded characters, re-constructs the bit string, and
+traverses the tree according to the binary pattern (0->left, 1->right); every time a leaf is encountered in the tree,
+the character represented at that leaf is printed to the final, recovered text. The last n padded digits are ignored.
+
+The next step in this implementation would be to combine it with a TCP/IP protocol to actually send the compressed
+document.
+*/
+
 #include <iostream> 
 #include <fstream>
 #include <array>
@@ -12,28 +33,11 @@ using namespace std;
 HuffmanTree::HuffmanTree():encodedFilePadding{0}
 {
 	root.reset(new node);
-	//root = nullptr;
 	asciiArray.reset(new asciiNode[128]);
-	//messageCharCount = 0;
 }
 
 HuffmanTree::~HuffmanTree() {}
 
-/*
-void HuffmanTree::traverseDelete(shared_ptr<node> r)
-{
-if (r == nullptr)
-return;
-traverseDelete(r->left);
-traverseDelete(r->right);
-delete r;
-return;
-}
-*/
-
-/*
-The following functions are for encoding and 'sending' encoded files.
-*/
 bool HuffmanTree::makeCompressedFile(string inputFile, string outputFile)
 {
 	if (!readFile(inputFile))
@@ -49,19 +53,17 @@ bool HuffmanTree::makeCompressedFile(string inputFile, string outputFile)
 		return false;
 	}
 	
-
 	return true;
 }
 
 bool HuffmanTree::readFile(string filename)
 {
-	char read;
+	unsigned char read;
 	ifstream infile(filename.c_str());
 	
-
 	if (!infile.is_open())
 	{
-		cout << "ERROR opening file!" << endl;
+		cout << "ERROR opening input file!" << endl;
 		return false;
 	}
 	 
@@ -70,22 +72,8 @@ bool HuffmanTree::readFile(string filename)
 		asciiArray[read].freq++;
 	}
 	
-	/*
-	if (infile.fail())
-	{
-		cout << "ERROR reading file" << endl;
-		return false;
-	}
-	*/
 	infile.close();
 
-	/*
-	if (infile.fail())
-	{
-		cout << "ERROR closing file" << endl;
-		return false;
-	}
-	*/
 	return true;
 }
 
@@ -113,7 +101,6 @@ void HuffmanTree::buildTree()
 		temp1=pq.top();
 		pq.pop();
 
-
 		if (!pq.empty())
 		{
 			temp3 = make_shared<node>();
@@ -129,7 +116,6 @@ void HuffmanTree::buildTree()
 			root = temp1;
 		}
 	}
-	
 }
 
 bool HuffmanTree::isLeaf(shared_ptr<node> const& nd) const
@@ -143,8 +129,9 @@ void HuffmanTree::encode(shared_ptr<node> const& nd, string huffCode)
 {
 	if (isLeaf(nd))
 	{
-		cout << nd->ch << " with huffcode: " << huffCode << endl;
 		asciiArray[nd->ch].encoding = huffCode;
+
+		//cout << nd->ch << ": " << huffCode << endl;
 		return;
 	}
 
@@ -156,10 +143,10 @@ void HuffmanTree::encode(shared_ptr<node> const& nd, string huffCode)
 
 bool HuffmanTree::writeEncoded2File(string inputFile, string outputFile)
 {
-	char read;
+	unsigned char read;
 	const int WRITE_SIZE = 8;
 
-	string stream = "";
+	string bitStream = "";
 
 	ifstream infile(inputFile.c_str());
 
@@ -169,21 +156,6 @@ bool HuffmanTree::writeEncoded2File(string inputFile, string outputFile)
 		return false;
 	}
 
-
-	while (infile >> noskipws >> read)
-	{
-		stream += asciiArray[read].encoding;
-	}
-
-	infile.close();
-	/*
-	if (infile.fail())
-	{
-		cout << "ERROR closing input file!" << endl;
-		return false;
-	}
-	*/
-
 	ofstream outfile(outputFile.c_str(), ios::binary);
 
 	if (!outfile.is_open())
@@ -192,86 +164,66 @@ bool HuffmanTree::writeEncoded2File(string inputFile, string outputFile)
 		return false;
 	}
 
-	while((int)stream.length() % 8 > 0) //generate arbitrary bits to create even byte count
+	while (infile >> noskipws >> read)
 	{
-		stream += '0';
-		encodedFilePadding++;
+		bitStream += asciiArray[read].encoding;
+		printToEncoded(bitStream, outfile);
 	}
 
-	cout << encodedFilePadding << "   file padding is" << endl;
-	while ((int)stream.length() > 0)
+	while ((int)bitStream.length() % WRITE_SIZE > 0) //pad the last byte of encrypted file with 0's
 	{
-		string byte = stream.substr(0, WRITE_SIZE);
-
-		bitset<WRITE_SIZE> segment(byte);
-		const char toWrite = (unsigned char)((unsigned int)segment.to_ulong());
-		outfile.write(&toWrite, sizeof(char));
-		stream = stream.substr(WRITE_SIZE, stream.length() - WRITE_SIZE);
-		cout << "One byte at a time: " << byte << endl;
+		bitStream += '0';
+		++encodedFilePadding;
 	}
+
+	printToEncoded(bitStream, outfile);
 
 	outfile.close();
-	/*
-	if (outfile.fail())
+
+	return true;
+}
+
+void HuffmanTree::printToEncoded(string& bitStream, ostream& outfile)
+{
+	const int WRITE_SIZE = 8;
+
+	if ((int)bitStream.length() >= WRITE_SIZE)
 	{
-		cout << "ERROR closing output file!" << endl;
-		return false;
+		string byte = bitStream.substr(0, WRITE_SIZE);
+		bitset<WRITE_SIZE> segment(byte);
+		const char toWrite = (char)((int)segment.to_ulong());
+		outfile.write(&toWrite, sizeof(char));
+		bitStream = bitStream.substr(WRITE_SIZE, bitStream.length() - WRITE_SIZE);
 	}
-	*/
+}
+
+/*
+The following functions are for recieving and decoding encoded files.
+*/
+bool HuffmanTree::decompressFile(string encodedFile, string outputFile)
+{
+	if (!decodeToFile(encodedFile, outputFile))
+		return false;
+
+	cout << "Text Compression Successful." << endl;
 
 	return true;
 }
 
 
 /*
-The following functions are for recieving and decoding encoded files.
+This is for the next implementation using less storage.
 */
-bool HuffmanTree::decompressFile(string inputFile, string outputFile)
+bool HuffmanTree::decodeToFile(string eFile, string outputFile)
 {
-	string bitStream = "";
+	ifstream encodedFile(eFile.c_str(), ios::binary);
+	ofstream oFile(outputFile.c_str());
 
-	readEncodedFile(inputFile, bitStream);
-
-	if (!writeDecoded2File(bitStream, outputFile))
-		return false;
-
-	return true;
-}
-
-bool HuffmanTree::readEncodedFile(string filename, string& bitStream)
-{
-	ifstream encodedfile(filename.c_str(), ios::binary);
-
-	if (!encodedfile.is_open())
+	if (!encodedFile.is_open())
 	{
 		cout << "ERROR opening encoded file!" << endl;
 		return false;
 	}
-
-	unsigned char readMe;
-	while (encodedfile >> noskipws >> readMe)
-	{
-		bitset<8> set((unsigned long)readMe);
-		bitStream += set.to_string();
-	}
-
-	encodedfile.close();
-
-	/*
-	if (encodedfile.fail())
-	{
-		cout << "ERRORS reading from encoded file!" << endl;
-		return false;
-	}
-	*/
-
-	return true;
-}
-
-bool HuffmanTree::writeDecoded2File(string bits, string outputFile)
-{
-	ofstream oFile(outputFile.c_str());
-	int printedChars = 0;
 
 	if (!oFile.is_open())
 	{
@@ -279,45 +231,47 @@ bool HuffmanTree::writeDecoded2File(string bits, string outputFile)
 		return false;
 	}
 
+	string newBits, delayBits = "";
+	unsigned char readMe;
 	shared_ptr<node> walk = root;
-	cout << encodedFilePadding << "encoded file padding" << endl;
-	for (int i = 0; i < (int)bits.length()-encodedFilePadding; i++)
+
+	while (encodedFile >> noskipws >> readMe)
+	{
+		bitset<8> set((unsigned long)readMe);
+		newBits = set.to_string();
+
+		if (delayBits != "")
+		{
+			walkTree(walk, delayBits, oFile);
+		}
+		delayBits = newBits;
+	}
+	
+	string finalBits = delayBits.substr(0, (int)delayBits.length() - encodedFilePadding);
+	walkTree(walk, finalBits, oFile);
+	encodedFile.close();
+	oFile.close();
+
+	return true;
+}
+
+void HuffmanTree::walkTree(shared_ptr<node>& walk, string bits, ostream& outputFile)
+{
+	for (int i = 0; i < (int)bits.length(); i++)
 	{
 		if (bits[i] == '0')
 		{
-			cout << '0';
 			walk = walk->left;
 		}
 		else
 		{
-			cout << '1';
 			walk = walk->right;
 		}
 
 		if (isLeaf(walk))
-		{	
-			++printedChars;
-			oFile << walk->ch;
-			cout << "   " << walk->ch << endl;
+		{
+			outputFile << walk->ch;
 			walk = root;
-
 		}
 	}
-
-	/*
-	if (oFile.fail())
-	{
-		cout << "ERROR printing to output file!" << endl;
-		return false;
-	}
-	*/
-
-	oFile.close();
-	/*
-	if (oFile.fail())
-	{
-		cout << "ERROR closing output file!" << endl;
-	}
-	*/
-	return true;
 }
